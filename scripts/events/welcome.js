@@ -1,79 +1,110 @@
-const fs = require("fs-extra");
-const axios = require("axios");
-const Canvas = require("canvas");
+const { getTime, drive } = global.utils;
+if (!global.temp.welcomeEvent)
+	global.temp.welcomeEvent = {};
 
 module.exports = {
-  config: {
-    name: "welcome",
-    eventType: ["log:subscribe"],
-  },
+	config: {
+		name: "welcome",
+		version: "1.7",
+		author: "SAMY-CHARLES",
+		category: "events"
+	},
 
-  onStart: async ({ event, api }) => {
-    try {
-      const threadID = event.threadID;
-      const info = await api.getThreadInfo(threadID);
+	langs: {
+		vi: {
+			session1: "sáng",
+			session2: "trưa",
+			session3: "chiều",
+			session4: "tối",
+			welcomeMessage: "Cảm ơn bạn đã mời tôi vào nhóm!\nPrefix bot: %1\nĐể xem danh sách lệnh hãy nhập: %1help",
+			multiple1: "bạn",
+			multiple2: "các bạn",
+			defaultWelcomeMessage: "Xin chào {userName}.\nChào mừng bạn đến với {boxName}.\nChúc bạn có buổi {session} vui vẻ!"
+		},
+		en: {
+			session1: "morning",
+			session2: "noon",
+			session3: "afternoon",
+			session4: "evening",
+			welcomeMessage: "Thank you for inviting me to the group!\nBot prefix: %1\nTo view the list of commands, please enter: %1help",
+			multiple1: "you",
+			multiple2: "you guys",
+			defaultWelcomeMessage: `Hello {userName}.\nWelcome {multiple} to the chat group: {boxName}\nHave a nice {session} 😊`
+		}
+	},
 
-      const addedUser = event.logMessageData.addedParticipants[0];
-      const name = addedUser.fullName;
-      const uid = addedUser.userFbId;
-      const memberCount = info.participantIDs.length;
+	onStart: async ({ threadsData, message, event, api, getLang }) => {
+		if (event.logMessageType == "log:subscribe")
+			return async function () {
+				const hours = getTime("HH");
+				const { threadID } = event;
+				const { nickNameBot } = global.GoatBot.config;
+				const prefix = global.utils.getPrefix(threadID);
+				const dataAddedParticipants = event.logMessageData.addedParticipants;
 
-      // === BACKGROUND IMAGE ===
-      const bgURL = "https://i.ibb.co/7K1vzLJ/wallpaper-anime-samurai.jpg"; // Fond stylé
-      const bg = await Canvas.loadImage(bgURL);
+				// if new member is bot
+				if (dataAddedParticipants.some((item) => item.userFbId == api.getCurrentUserID())) {
+					if (nickNameBot)
+						api.changeNickname(nickNameBot, threadID, api.getCurrentUserID());
+					return message.send(getLang("welcomeMessage", prefix));
+				}
 
-      // === USER AVATAR ===
-      const avatarURL = `https://graph.facebook.com/${uid}/picture?height=720&width=720`;
-      const avatarImg = await Canvas.loadImage(avatarURL);
+				// if new member:
+				if (!global.temp.welcomeEvent[threadID])
+					global.temp.welcomeEvent[threadID] = {
+						joinTimeout: null,
+						dataAddedParticipants: []
+					};
 
-      // === CANVAS ===
-      const canvas = Canvas.createCanvas(1500, 800);
-      const ctx = canvas.getContext("2d");
+				// push new member to array
+				global.temp.welcomeEvent[threadID].dataAddedParticipants.push(...dataAddedParticipants);
+				// if timeout is set, clear it
+				clearTimeout(global.temp.welcomeEvent[threadID].joinTimeout);
 
-      // Fond
-      ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+				// set new timeout
+				global.temp.welcomeEvent[threadID].joinTimeout = setTimeout(async function () {
+					const threadData = await threadsData.get(threadID);
+					if (threadData.settings.sendWelcomeMessage == false) return;
 
-      // Zone avatar ronde
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(750, 270, 150, 0, Math.PI * 2);
-      ctx.closePath();
-      ctx.clip();
-      ctx.drawImage(avatarImg, 600, 120, 300, 300);
-      ctx.restore();
+					const dataAddedParticipants = global.temp.welcomeEvent[threadID].dataAddedParticipants;
+					const dataBanned = threadData.data.banned_ban || [];
+					const threadName = threadData.threadName;
+					const userName = [],
+						mentions = [];
+					let multiple = false;
 
-      // Pseudo
-      ctx.font = "70px Arial Black";
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.fillText(name, 750, 500);
+					if (dataAddedParticipants.length > 1)
+						multiple = true;
 
-      // Code stylé hex
-      ctx.font = "35px Consolas";
-      ctx.fillStyle = "#00eaff";
-      ctx.fillText("{ 0F1 • 84D • 23E • 01D • 91F }", 750, 560);
+					for (const user of dataAddedParticipants) {
+						if (dataBanned.some((item) => item.id == user.userFbId)) continue;
+						userName.push(user.fullName);
+						mentions.push({
+							tag: user.fullName,
+							id: user.userFbId
+						});
+					}
 
-      // Nombre de membres
-      ctx.font = "45px Arial Black";
-      ctx.fillStyle = "#fff";
-      ctx.fillText(`YOU'RE THE ${memberCount}ᵗʰ MEMBER OF THIS GROUP`, 750, 650);
+					if (userName.length == 0) return;
 
-      // === OUTPUT ===
-      const path = __dirname + `/cache/welcome_${uid}.png`;
-      fs.writeFileSync(path, canvas.toBuffer());
+					// Nouveau message de bienvenue
+					const adderName = event.author ? event.author : "Admin"; // nom de la personne qui a ajouté
+					const memberCount = threadData.data.members ? threadData.data.members.length : "?";
 
-      api.sendMessage(
-        {
-          body: `🎉 Bienvenue ${name} !`,
-          attachment: fs.createReadStream(path)
-        },
-        threadID,
-        () => fs.unlinkSync(path)
-      );
+					const welcomeMessage = `╭─⌾🐬LIAMS BOT🐬
+│ BIENVENU @${userName.join(", ")}
+│ 📌 ${threadName}
+│ 👥 Membres : ${memberCount}
+│ 🛡️ Admin : ${adderName}
+╰──────────⌾`;
 
-    } catch (err) {
-      console.log(err);
-      api.sendMessage("❌ Impossible de générer l'image de bienvenue.", event.threadID);
-    }
-  }
+					message.send({
+						body: welcomeMessage,
+						mentions
+					});
+
+					delete global.temp.welcomeEvent[threadID];
+				}, 1500);
+			};
+	}
 };
