@@ -2,7 +2,7 @@ const axios = require("axios");
 
 module.exports = {
     config: {
-        name: "imgbb",
+        name: "img",
         aliases: ["uploadimg", "upload"],
         version: "1.1",
         author: "Saimx69x",
