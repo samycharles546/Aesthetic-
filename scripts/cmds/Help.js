@@ -48,7 +48,7 @@ module.exports = {
     Object.keys(categories).sort().forEach(cat => {
       msg += `┃🪐│ ✧ ${cat.toUpperCase()} 🍀\n`;
       categories[cat].sort().forEach(cmdName => {
-        msg += `┃🪐│    ➳ ${cmdName} 🩷\n`;
+        msg += `┃🪐│    ➳ ${cmdName} \n`;
       });
       msg += "┃🪐│ ────────────────────────\n";
     });
